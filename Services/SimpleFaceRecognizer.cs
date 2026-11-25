@@ -55,7 +55,7 @@ namespace YMH219.FaceRecognition.Services
                         }
 
                         using var resized = new Mat();
-                        Cv2.Resize(img, resized, new Size(100, 100));
+                        Cv2.Resize(img, resized, new OpenCvSharp.Size(100, 100));
                         Cv2.EqualizeHist(resized, resized);
                         Mat histogram = ComputeHistogram(resized);
                         _samples.Add(new LabeledHistogram(label, histogram));
@@ -86,7 +86,7 @@ namespace YMH219.FaceRecognition.Services
             }
 
             using var resized = new Mat();
-            Cv2.Resize(gray, resized, new Size(100, 100));
+            Cv2.Resize(gray, resized, new OpenCvSharp.Size(100, 100));
             Cv2.EqualizeHist(resized, resized);
             Mat histogram = ComputeHistogram(resized);
             _samples.Add(new LabeledHistogram(label.Trim(), histogram));
@@ -110,7 +110,7 @@ namespace YMH219.FaceRecognition.Services
             }
 
             using var resized = new Mat();
-            Cv2.Resize(gray, resized, new Size(100, 100));
+            Cv2.Resize(gray, resized, new OpenCvSharp.Size(100, 100));
             Cv2.EqualizeHist(resized, resized);
             using Mat queryHist = ComputeHistogram(resized);
 
