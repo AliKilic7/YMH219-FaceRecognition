@@ -11,9 +11,9 @@ namespace YMH219.FaceRecognition.Services
     /// Yerel Dataset/ klasöründeki etiketli yüz görüntülerinden histogram tabanlı
     /// karşılaştırma ile basit yüz tanıma gerçekleştiren eğitsel sınıf.
     /// </summary>
-    public sealed class SimpleFaceRecognizer : IFaceRecognizerService
+    public sealed class SimpleFaceRecognizer : IFaceRecognizerService, IDisposable
     {
-        private sealed class LabeledHistogram
+        private sealed class LabeledHistogram : IDisposable
         {
             public string Label { get; }
             public Mat Histogram { get; }
@@ -22,6 +22,11 @@ namespace YMH219.FaceRecognition.Services
             {
                 Label = label;
                 Histogram = histogram;
+            }
+
+            public void Dispose()
+            {
+                Histogram.Dispose();
             }
         }
 
@@ -147,6 +152,15 @@ namespace YMH219.FaceRecognition.Services
         {
             string ext = Path.GetExtension(path).ToLowerInvariant();
             return ext is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".webp";
+        }
+
+        public void Dispose()
+        {
+            foreach (LabeledHistogram sample in _samples)
+            {
+                sample.Dispose();
+            }
+            _samples.Clear();
         }
     }
 }

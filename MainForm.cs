@@ -44,7 +44,7 @@ namespace YMH219.FaceRecognition
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(245, 247, 250);
 
-            _datasetPath = Path.Combine(AppContext.BaseDirectory, "Dataset");
+            _datasetPath = ResolveDatasetPath();
             Directory.CreateDirectory(_datasetPath);
 
             // Üst kontrol paneli
@@ -331,7 +331,11 @@ namespace YMH219.FaceRecognition
             using var annotated = frame.Clone();
             foreach (FaceDetectionResult det in detections)
             {
-                var cvRect = new Rect(det.BoundingBox.X, det.BoundingBox.Y, det.BoundingBox.Width, det.BoundingBox.Height);
+                Rect cvRect = ClampRectToFrame(det.BoundingBox, frame);
+                if (cvRect.Width <= 0 || cvRect.Height <= 0)
+                {
+                    continue;
+                }
 
                 // Tanıma denemesi
                 if (_recognizer.LabelCount > 0)
@@ -403,23 +407,35 @@ namespace YMH219.FaceRecognition
                     return;
                 }
 
-                string label = _txtLabel.Text.Trim();
-                string personDir = Path.Combine(_datasetPath, label);
+                string rawLabel = _txtLabel.Text.Trim();
+                string safeLabel = SanitizeFolderName(rawLabel);
+                if (string.IsNullOrWhiteSpace(safeLabel))
+                {
+                    MessageBox.Show("Geçerli bir etiket adı giriniz.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string personDir = Path.Combine(_datasetPath, safeLabel);
                 Directory.CreateDirectory(personDir);
 
                 int saved = 0;
                 foreach (FaceDetectionResult face in faces)
                 {
-                    var cvRect = new Rect(face.BoundingBox.X, face.BoundingBox.Y, face.BoundingBox.Width, face.BoundingBox.Height);
+                    Rect cvRect = ClampRectToFrame(face.BoundingBox, _currentFrame);
+                    if (cvRect.Width <= 0 || cvRect.Height <= 0)
+                    {
+                        continue;
+                    }
+
                     using var faceRoi = new Mat(_currentFrame, cvRect);
-                    string fileName = $"{label}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png";
-                    Cv2.ImWrite(Path.Combine(personDir, fileName), faceRoi);
-                    _recognizer.AddSample(label, faceRoi);
                     saved++;
+                    string fileName = $"{safeLabel}_{DateTime.Now:yyyyMMdd_HHmmss_fff}_{saved}.png";
+                    Cv2.ImWrite(Path.Combine(personDir, fileName), faceRoi);
+                    _recognizer.AddSample(rawLabel, faceRoi);
                 }
 
-                _lblDetectionInfo.Text = $"{saved} yüz '{label}' etiketiyle veri kümesine eklendi.";
-                MessageBox.Show($"{saved} yüz görüntüsü '{label}' klasörüne kaydedildi.", "Başarılı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _lblDetectionInfo.Text = $"{saved} yüz '{rawLabel}' etiketiyle veri kümesine eklendi.";
+                MessageBox.Show($"{saved} yüz görüntüsü '{personDir}' klasörüne kaydedildi.", "Başarılı", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -456,11 +472,7 @@ namespace YMH219.FaceRecognition
 
             try
             {
-                var cvRect = new Rect(
-                    faces[0].BoundingBox.X,
-                    faces[0].BoundingBox.Y,
-                    faces[0].BoundingBox.Width,
-                    faces[0].BoundingBox.Height);
+                Rect cvRect = ClampRectToFrame(faces[0].BoundingBox, _currentFrame);
                 using var faceRoi = new Mat(_currentFrame, cvRect);
                 Cv2.ImWrite(dialog.FileName, faceRoi);
                 MessageBox.Show("Yüz görüntüsü başarıyla kaydedildi.", "Başarılı", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -486,8 +498,45 @@ namespace YMH219.FaceRecognition
             int width = temp.Cols;
             int height = temp.Rows;
             int stride = (int)temp.Step();
-            var bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, temp.Data);
+            using var bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, temp.Data);
             return new Bitmap(bitmap); // Kopya oluşturarak Mat'ten bağımsız hale getir
+        }
+
+        private static string ResolveDatasetPath()
+        {
+            string currentDir = Directory.GetCurrentDirectory();
+            if (Directory.GetFiles(currentDir, "*.csproj").Length > 0)
+            {
+                return Path.Combine(currentDir, "Dataset");
+            }
+
+            DirectoryInfo? dir = new DirectoryInfo(AppContext.BaseDirectory);
+            for (int i = 0; i < 4 && dir != null; i++)
+            {
+                if (dir.GetFiles("*.csproj").Length > 0)
+                {
+                    return Path.Combine(dir.FullName, "Dataset");
+                }
+
+                dir = dir.Parent;
+            }
+
+            return Path.Combine(AppContext.BaseDirectory, "Dataset");
+        }
+
+        private static Rect ClampRectToFrame(Rectangle box, Mat frame)
+        {
+            int x = Math.Clamp(box.X, 0, Math.Max(0, frame.Cols - 1));
+            int y = Math.Clamp(box.Y, 0, Math.Max(0, frame.Rows - 1));
+            int w = Math.Clamp(box.Width, 0, frame.Cols - x);
+            int h = Math.Clamp(box.Height, 0, frame.Rows - y);
+            return new Rect(x, y, w, h);
+        }
+
+        private static string SanitizeFolderName(string name)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars();
+            return string.Concat(name.Where(c => !invalid.Contains(c))).Trim();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -495,6 +544,7 @@ namespace YMH219.FaceRecognition
             StopCamera();
             _currentFrame?.Dispose();
             _detector?.Dispose();
+            _recognizer.Dispose();
             base.OnFormClosing(e);
         }
     }
